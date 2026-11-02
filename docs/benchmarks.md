@@ -97,6 +97,18 @@ section 4, but the integration suite (`FailureModesIT`) runs against the default
 | `reWriteBatchedInserts=true` (pgjdbc rewrites batched inserts into multi-row inserts) | **81,962 (+21%)** | 0.68 s | not enabled by default yet |
 | `commit-per-batch=true` | 103,663 (+53%) | 0.32 s | see trade-off above |
 
+### Chunk size (1,000,000 rows, 4 workers, baseline settings)
+
+| Chunk rows | Chunks | Rows/s | Chunk p50 / p95 / p99 |
+|---|---|---|---|
+| 1,000 | 1,000 | 54,734 | 0.03 / 0.05 / 0.07 s |
+| **5,000** | 200 | 57,841 | 0.22 / 0.64 / 0.93 s |
+| 20,000 | 50 | 46,789 | 1.57 / 2.97 / 3.25 s |
+
+Single runs: the same 5,000-row configuration measured 67,901 rows/s earlier, so differences under about 15% are noise.
+The clear signals are that 20,000-row chunks are slower (about 19% here) and take about 7x longer each, and that
+1,000-row chunks buy no throughput while multiplying messages and DynamoDB operations by 5.
+
 ## 4. Chaos at scale
 
 **Kill workers mid-run, with duplicates injected** (1,000,000 rows, 200 chunks, 4 workers, queue visibility 20 s and claim
@@ -157,7 +169,12 @@ per-worker speed carries over to Fargate and RDS, which has not been measured.
 
 ## 7. Limits of this evidence
 
-- One machine, one run per configuration, emulated AWS services; numbers will differ on AWS.
+- One machine, one run per configuration, emulated AWS services; numbers will differ on AWS. **Run-to-run variance is
+  real**: the identical 1M-row / 4-worker / 5,000-row-chunk configuration measured 67,901 rows/s in the scaling run and
+  57,841 rows/s in the chunk-size sweep (about 16% apart). Treat differences smaller than roughly 15% as noise; the larger
+  effects reported here (the 2x from 1 to 4 workers, the wait-event shares, the +53% from commit-per-batch, the no-duplicates
+  control) are well outside it, but the +21% for batched-insert rewrite and the small steps in the tables are not
+  separately established.
 - Postgres was untuned (default `shared_buffers`, WAL settings, synchronous commit on) and shared a host with the workers.
 - The aggregator and notifier roles were not running during the throughput runs (they work off the completion event,
   after the measured window).
