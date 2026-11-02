@@ -35,8 +35,16 @@ echo "[init] wiring S3 ObjectCreated (uploads/) -> file-events"
 awslocal s3api put-bucket-notification-configuration --bucket tripstream-raw \
   --notification-configuration '{"QueueConfigurations":[{"QueueArn":"arn:aws:sqs:us-east-1:000000000000:file-events","Events":["s3:ObjectCreated:*"],"Filter":{"Key":{"FilterRules":[{"Name":"prefix","Value":"uploads/"}]}}}]}'
 
-echo "[init] creating SNS topic"
-awslocal sns create-topic --name trip-events >/dev/null
+echo "[init] creating SNS topics and fan-out subscriptions"
+TOPIC_ARN=$(awslocal sns create-topic --name trip-events --query TopicArn --output text)
+awslocal sns create-topic --name tripstream-notifications >/dev/null   # target of the notifier's SNS adapter
+for q in aggregator-queue notifier-queue; do
+  # Idempotent: re-subscribing the same endpoint returns the existing subscription.
+  # RawMessageDelivery: consumers get the event JSON itself, not the SNS envelope.
+  awslocal sns subscribe --topic-arn "$TOPIC_ARN" --protocol sqs \
+    --notification-endpoint "arn:aws:sqs:us-east-1:000000000000:${q}" \
+    --attributes RawMessageDelivery=true >/dev/null
+done
 
 echo "[init] creating DynamoDB tables"
 create_table() {

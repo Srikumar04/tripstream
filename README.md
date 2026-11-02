@@ -4,7 +4,7 @@ Event-driven trip-processing pipeline on AWS (S3, SQS, SNS, DynamoDB) with Sprin
 A client uploads a large CSV of synthetic trips; the system validates it, processes it in parallel chunks, stores clean
 rows, reports bad rows, and fans out events. Every stage is idempotent and retry-safe.
 
-> Status: Phase 3 (reliability: backoff, heartbeat, DLQ redrive, failure tests) done. See the build plan in the project brief.
+> Status: Phase 4 (SNS fan-out, aggregator, notifier) done. See the build plan in the project brief.
 
 ## Run locally (no AWS account needed)
 
@@ -46,6 +46,12 @@ scripts/upload.sh data/generated/trips-100k.csv             # POST /uploads, PUT
 - **Write once:** trips are upserted on the natural key `trip_id` (no-op updates are skipped), so reprocessing a chunk rewrites nothing.
 - **Complete once:** both the splitter and the last worker check `chunksDone == chunksTotal`; finalisation is idempotent and the `BatchCompleted` publish is guarded by a flag.
 - Verified by `PipelineIT`: 100k rows, 5% bad, 2% duplicates give exactly 93,000 good / 5,000 bad, and re-delivering every chunk message and the file event changes nothing.
+
+## Fan-out
+When a job completes, `BatchCompleted` goes to the `trip-events` SNS topic, which fans out to two queues:
+- `aggregator` role: recomputes `daily_vehicle_stats` for the vehicle-days the job touched (idempotent, ADR-007).
+- `notifier` role: sends a notification through a `NotificationSender` port: `console` adapter by default,
+  `--tripstream.notifier.adapter=sns` for the real SNS adapter (`tripstream-notifications` topic).
 
 ## Reliability
 Retries use exponential backoff and end in a DLQ after 5 receives; a heartbeat keeps slow chunks from being redelivered;

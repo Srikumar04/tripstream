@@ -74,6 +74,12 @@ class LocalStackInitScriptIT {
             assertThat(s3.listBuckets().buckets()).extracting(b -> b.name())
                     .contains("tripstream-raw", "tripstream-chunks", "tripstream-errors");
             assertThat(sns.listTopics().topics()).anyMatch(t -> t.topicArn().endsWith(":trip-events"));
+            String topic = sns.listTopics().topics().stream().map(t -> t.topicArn())
+                    .filter(a -> a.endsWith(":trip-events")).findFirst().orElseThrow();
+            assertThat(sns.listSubscriptionsByTopic(b -> b.topicArn(topic)).subscriptions())
+                    .extracting(sub -> sub.endpoint())
+                    .anyMatch(e -> e.endsWith(":aggregator-queue"))
+                    .anyMatch(e -> e.endsWith(":notifier-queue"));
             assertThat(ddb.listTables().tableNames())
                     .contains("tripstream-idempotency", "tripstream-job-progress");
         }

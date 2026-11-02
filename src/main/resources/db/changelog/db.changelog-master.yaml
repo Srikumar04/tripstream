@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/001-initial-schema.sql
   - include:
       file: db/changelog/002-chunk-counts.sql
+  - include:
+      file: db/changelog/003-fanout.sql

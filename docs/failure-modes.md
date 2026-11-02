@@ -57,6 +57,12 @@ worker's lease expires before its message reappears, so the redelivered message 
 - **Happens:** duplicates span chunks, so parallel transactions touch the same rows. Unsorted, Postgres detected deadlocks.
 - **Fix:** every chunk upserts in `trip_id` order, so locks are always taken in the same order. Deadlock remains a retryable error as a safety net.
 
+## Duplicate or redelivered BatchCompleted (`FanOutIT`)
+- **Happens:** the event reaches a consumer more than once (SNS/SQS are at-least-once, the publisher itself may re-publish after a crash).
+- **Aggregator:** recomputes the affected vehicle-days from `trips`, so repeating it writes the same values; the `processed_events` row makes duplicates skip the work. The test delivers one job's event three times and then re-uploads the same trips as a second job: stats still equal an oracle computed straight from the CSV (nothing doubled).
+- **Notifier:** each event id is claimed in DynamoDB before sending; duplicates see DONE and skip. One notification per job in the test despite 3 deliveries. A crash between send and mark-done can notify again after the lease, so delivery is at-least-once.
+- **A consumer is down or failing:** its queue buffers events (the other consumer is unaffected); persistent failures go to that consumer's own DLQ and can be redriven with `scripts/redrive.sh aggregator-queue` (or `notifier-queue`).
+
 ## Known gaps (called out, not hidden)
 - **Redrive endpoint has no authentication.** Keep it on a private network / behind IAM in AWS.
 - **Splitter crash mid-split** re-splits from the start on redelivery (deterministic, idempotent), but rewrites every chunk object; very large files pay that cost twice.

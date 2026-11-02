@@ -34,3 +34,14 @@ Section-5 tech choices are fixed by the project brief; deviations get an entry h
 - Context: Found by the 100k-row pipeline test. Duplicate trips can land in different chunks, so parallel workers upsert overlapping key sets. With each worker taking row locks in file order, Postgres reported `deadlock detected`, the chunks were retried only after the visibility timeout, and the job stalled.
 - Decision: sort each chunk's rows by `trip_id` before the batch upsert, so all transactions acquire row locks in the same global order.
 - Consequences: no lock cycles between chunks; deadlocks remain a retryable error (SQS redelivery) as a safety net.
+
+## ADR-007: The aggregator recomputes affected (vehicle, day) rows instead of adding deltas
+- Status: accepted
+- Context: `daily_vehicle_stats` is fed by at-least-once BatchCompleted events, and a later upload can re-send trips that already exist (same `trip_id`, upserted). Incrementing counters per event double-counts on either.
+- Decision: for each (vehicle, UTC day) touched by the job, recompute count and distance from the `trips` table and overwrite the row (`INSERT ... SELECT ... ON CONFLICT DO UPDATE SET = EXCLUDED`). An event-id row in `processed_events` (same transaction) skips duplicate work, and a transaction-scoped advisory lock serialises recomputes so concurrent events cannot overwrite each other with a stale snapshot.
+- Consequences: idempotent and order-insensitive without bookkeeping per delta; the cost is a scan of the touched vehicle-days per event (supported by an expression index) and a single-writer lock (fine: one statement per job). If a re-upload moves a trip to another vehicle or day, the *old* vehicle-day is not recomputed until another job touches it.
+
+## ADR-008: Fan-out over SNS with raw message delivery; notifier behind a port
+- Status: accepted
+- Decision: `trip-events` fans out to `aggregator-queue` and `notifier-queue` (SQS subscriptions with RawMessageDelivery, so consumers read the event JSON directly). Each consumer has its own queue and DLQ, so one slow or failing consumer never blocks the other. The notifier depends on a `NotificationSender` interface with a console adapter (default) and an SNS adapter (which can reach email/SMS/chat).
+- Consequences: event ids are stable per job (`BatchCompleted:<jobId>`); consumers dedupe on them (aggregator via Postgres, notifier via the DynamoDB claim pattern). Notification delivery is at-least-once. On real AWS the SQS queue policies must allow `sns.amazonaws.com` (Terraform, Phase 5); LocalStack does not enforce it.

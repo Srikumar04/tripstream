@@ -127,6 +127,26 @@ final class TestEnv {
         }
     }
 
+    static void purge(String... queues) {
+        try (SqsClient sqs = sqs()) {
+            for (String q : queues) {
+                sqs.purgeQueue(b -> b.queueUrl(url(sqs, q)));
+            }
+        }
+    }
+
+    /** Collects every message that arrives within the window (used to assert "exactly N" without sleeping blind). */
+    static List<software.amazon.awssdk.services.sqs.model.Message> drain(SqsClient sqs, String queueUrl,
+            Duration window) {
+        List<software.amazon.awssdk.services.sqs.model.Message> all = new ArrayList<>();
+        long end = System.nanoTime() + window.toNanos();
+        while (System.nanoTime() < end) {
+            all.addAll(sqs.receiveMessage(b -> b.queueUrl(queueUrl).maxNumberOfMessages(10).waitTimeSeconds(1))
+                    .messages());
+        }
+        return all;
+    }
+
     static String url(SqsClient sqs, String queue) {
         return sqs.getQueueUrl(b -> b.queueName(queue)).queueUrl();
     }

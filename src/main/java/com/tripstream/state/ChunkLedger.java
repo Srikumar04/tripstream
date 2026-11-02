@@ -136,6 +136,14 @@ public class ChunkLedger {
         }
     }
 
+    /** Generic claim/finish for non-chunk work (e.g. notifications): marks the claimed item DONE. */
+    public void markDone(String pk) {
+        ddb.updateItem(b -> b.tableName(idempotencyTable).key(Map.of("pk", s(pk)))
+                .updateExpression("SET #s = :done")
+                .expressionAttributeNames(Map.of("#s", "status"))
+                .expressionAttributeValues(Map.of(":done", s("DONE"))));
+    }
+
     /** Idempotent: sets the total and makes sure chunksDone exists (ADD 0). */
     public void setTotal(UUID jobId, long chunksTotal) {
         ddb.updateItem(b -> b.tableName(progressTable).key(Map.of("jobId", s(jobId.toString())))

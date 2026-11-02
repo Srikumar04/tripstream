@@ -38,6 +38,9 @@ tripstream:
     visibility-timeout: PT2M      # what each heartbeat extends to; keep equal to the queues' VisibilityTimeout
     retry-base-delay: PT2S        # backoff: base * 2^(receives-1), capped, +/-20% jitter
     retry-max-delay: PT5M
+  notifier:
+    adapter: console          # console (local/mock) | sns (real)
+    topic: tripstream-notifications
   worker:
     concurrency: 4            # chunks processed in parallel per worker process
     poll-size: 4              # SQS messages per poll; must be <= concurrency and <= 10
