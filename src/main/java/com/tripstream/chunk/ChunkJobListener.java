@@ -2,6 +2,7 @@ package com.tripstream.chunk;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.awspring.cloud.sqs.annotation.SqsListener;
+import io.awspring.cloud.sqs.listener.Visibility;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +22,7 @@ class ChunkJobListener {
     @SqsListener(value = "${tripstream.queues.chunk-jobs}",
             maxConcurrentMessages = "${tripstream.worker.concurrency:4}",
             maxMessagesPerPoll = "${tripstream.worker.poll-size:4}")
-    void onChunk(String body) throws Exception {
-        processor.process(mapper.readValue(body, ChunkMessage.class));
+    void onChunk(String body, Visibility visibility) throws Exception {
+        processor.process(mapper.readValue(body, ChunkMessage.class), visibility);
     }
 }

@@ -8,7 +8,10 @@ import com.tripstream.chunk.RowValidator;
 import com.tripstream.jobs.JobCompletion;
 import com.tripstream.jobs.JobRepository;
 import com.tripstream.jobs.JobStatus;
+import com.tripstream.reliability.Heartbeat;
 import com.tripstream.state.ChunkLedger;
+import io.awspring.cloud.sqs.listener.Visibility;
+import java.time.Duration;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -50,6 +53,8 @@ public class Splitter {
     private final String chunksBucket;
     private final String chunkQueueName;
     private final int chunkRows;
+    private final Duration heartbeatInterval;
+    private final int visibilitySeconds;
     private volatile String chunkQueueUrl;
 
     public Splitter(S3Client s3, SqsAsyncClient sqs, JobRepository jobs, ChunkRepository chunks,
@@ -57,7 +62,9 @@ public class Splitter {
             @Value("${tripstream.buckets.raw}") String rawBucket,
             @Value("${tripstream.buckets.chunks}") String chunksBucket,
             @Value("${tripstream.queues.chunk-jobs}") String chunkQueueName,
-            @Value("${tripstream.splitter.chunk-rows:5000}") int chunkRows) {
+            @Value("${tripstream.splitter.chunk-rows:5000}") int chunkRows,
+            @Value("${tripstream.reliability.heartbeat-interval:PT30S}") Duration heartbeatInterval,
+            @Value("${tripstream.reliability.visibility-timeout:PT2M}") Duration visibilityTimeout) {
         this.s3 = s3;
         this.sqs = sqs;
         this.jobs = jobs;
@@ -69,9 +76,18 @@ public class Splitter {
         this.chunksBucket = chunksBucket;
         this.chunkQueueName = chunkQueueName;
         this.chunkRows = chunkRows;
+        this.heartbeatInterval = heartbeatInterval;
+        this.visibilitySeconds = (int) visibilityTimeout.toSeconds();
     }
 
-    public void split(UUID jobId, String key) throws IOException {
+    public void split(UUID jobId, String key, Visibility visibility) throws IOException {
+        // A big file can take longer than the visibility timeout to split; keep the file-events message ours.
+        try (Heartbeat ignored = Heartbeat.start(heartbeatInterval, () -> visibility.changeTo(visibilitySeconds))) {
+            doSplit(jobId, key);
+        }
+    }
+
+    private void doSplit(UUID jobId, String key) throws IOException {
         int chunkCount = 0;
         long rows = 0;
         try (var in = s3.getObject(b -> b.bucket(rawBucket).key(key));

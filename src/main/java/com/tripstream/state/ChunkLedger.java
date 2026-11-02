@@ -78,6 +78,22 @@ public class ChunkLedger {
         }
     }
 
+    /** Heartbeat: pushes the lease out while we are still working. False if we no longer own the claim. */
+    public boolean renewLease(String pk, String owner, Duration lease) {
+        long expires = Instant.now().getEpochSecond() + lease.toSeconds();
+        try {
+            ddb.updateItem(b -> b.tableName(idempotencyTable).key(Map.of("pk", s(pk)))
+                    .updateExpression("SET leaseExpiresAt = :exp")
+                    .conditionExpression("#s = :inprog AND #o = :me")
+                    .expressionAttributeNames(Map.of("#s", "status", "#o", "owner"))
+                    .expressionAttributeValues(Map.of(":exp", n(expires), ":inprog", s("IN_PROGRESS"),
+                            ":me", s(owner))));
+            return true;
+        } catch (ConditionalCheckFailedException e) {
+            return false;
+        }
+    }
+
     /** Gives up our claim after a failure so the retry does not have to wait for the lease to expire. */
     public void release(String pk, String owner) {
         try {

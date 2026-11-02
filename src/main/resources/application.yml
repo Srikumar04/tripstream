@@ -5,6 +5,11 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/tripstream}
     username: ${DB_USER:tripstream}
     password: ${DB_PASSWORD:tripstream}
+    hikari:
+      connection-timeout: 5000   # fail fast when the DB is unreachable; SQS retry/backoff takes over
+      data-source-properties:
+        socketTimeout: 30        # seconds; a hung DB must not block a worker (or its heartbeat) forever
+        tcpKeepAlive: true
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     # Only the api role migrates (see application-api.yml, ADR-005): concurrent first-boot
@@ -28,6 +33,11 @@ spring:
 tripstream:
   splitter:
     chunk-rows: 5000          # rows per chunk file / chunk-jobs message
+  reliability:
+    heartbeat-interval: PT30S     # extends message visibility + claim lease while working; PT0S disables
+    visibility-timeout: PT2M      # what each heartbeat extends to; keep equal to the queues' VisibilityTimeout
+    retry-base-delay: PT2S        # backoff: base * 2^(receives-1), capped, +/-20% jitter
+    retry-max-delay: PT5M
   worker:
     concurrency: 4            # chunks processed in parallel per worker process
     poll-size: 4              # SQS messages per poll; must be <= concurrency and <= 10

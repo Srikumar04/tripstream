@@ -1,6 +1,8 @@
 package com.tripstream.chunk;
 
 import com.tripstream.jobs.JobCompletion;
+import com.tripstream.reliability.Heartbeat;
+import io.awspring.cloud.sqs.listener.Visibility;
 import com.tripstream.state.ChunkLedger;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -52,12 +54,18 @@ public class ChunkProcessor {
     private final String chunksBucket;
     private final String errorsBucket;
     private final Duration lease;
+    private final Duration heartbeatInterval;
+    private final int visibilitySeconds;
+    private final Duration chaosDelay;
 
     public ChunkProcessor(ChunkLedger ledger, ChunkRepository chunks, TripWriter writer, JobCompletion completion,
             S3Client s3, TransactionTemplate tx,
             @Value("${tripstream.buckets.chunks}") String chunksBucket,
             @Value("${tripstream.buckets.errors}") String errorsBucket,
-            @Value("${tripstream.worker.lease:PT90S}") Duration lease) {
+            @Value("${tripstream.worker.lease:PT90S}") Duration lease,
+            @Value("${tripstream.reliability.heartbeat-interval:PT30S}") Duration heartbeatInterval,
+            @Value("${tripstream.reliability.visibility-timeout:PT2M}") Duration visibilityTimeout,
+            @Value("${tripstream.chaos.chunk-delay:PT0S}") Duration chaosDelay) {
         this.ledger = ledger;
         this.chunks = chunks;
         this.writer = writer;
@@ -67,9 +75,12 @@ public class ChunkProcessor {
         this.chunksBucket = chunksBucket;
         this.errorsBucket = errorsBucket;
         this.lease = lease;
+        this.heartbeatInterval = heartbeatInterval;
+        this.visibilitySeconds = (int) visibilityTimeout.toSeconds();
+        this.chaosDelay = chaosDelay;
     }
 
-    public void process(ChunkMessage msg) throws IOException {
+    public void process(ChunkMessage msg, Visibility visibility) throws IOException {
         String pk = msg.ledgerKey();
         var claim = ledger.claim(pk, lease);
         switch (claim.result()) {
@@ -82,7 +93,9 @@ public class ChunkProcessor {
             case CLAIMED -> {
             }
         }
-        try {
+        try (Heartbeat ignored = Heartbeat.start(heartbeatInterval, () -> beat(msg, pk, claim.owner(), visibility))) {
+            chunks.markStarted(msg.jobId(), msg.chunkId()); // attempts = number of times a worker began this chunk
+            chaosPause();
             run(msg, pk);
         } catch (RuntimeException | IOException e) {
             ledger.release(pk, claim.owner());
@@ -90,9 +103,27 @@ public class ChunkProcessor {
         }
     }
 
-    private void run(ChunkMessage msg, String pk) throws IOException {
-        chunks.markStarted(msg.jobId(), msg.chunkId());
+    /** Keeps a slow chunk from being redelivered: extend the message's visibility and our claim lease. */
+    private void beat(ChunkMessage msg, String pk, String owner, Visibility visibility) {
+        if (!ledger.renewLease(pk, owner, lease)) {
+            log.warn("jobId={} chunkId={} lost its claim lease; another worker may take over", msg.jobId(), msg.chunkId());
+        }
+        visibility.changeTo(visibilitySeconds);
+    }
 
+    /** Test/chaos hook (tripstream.chaos.chunk-delay): simulates a slow chunk so failures can be injected mid-flight. */
+    private void chaosPause() {
+        if (chaosDelay.isZero()) {
+            return;
+        }
+        try {
+            Thread.sleep(chaosDelay.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void run(ChunkMessage msg, String pk) throws IOException {
         // Dedupe by trip_id within the chunk, iterated in trip_id order: every worker then takes row locks in the
         // same global order, which prevents deadlocks between chunks that share (duplicated) trip_ids.
         Map<String, TripRow> good = new TreeMap<>();

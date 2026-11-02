@@ -4,7 +4,7 @@ Event-driven trip-processing pipeline on AWS (S3, SQS, SNS, DynamoDB) with Sprin
 A client uploads a large CSV of synthetic trips; the system validates it, processes it in parallel chunks, stores clean
 rows, reports bad rows, and fans out events. Every stage is idempotent and retry-safe.
 
-> Status: Phase 2 (splitter, chunk workers, idempotency, completion) done. See the build plan in the project brief.
+> Status: Phase 3 (reliability: backoff, heartbeat, DLQ redrive, failure tests) done. See the build plan in the project brief.
 
 ## Run locally (no AWS account needed)
 
@@ -46,6 +46,12 @@ scripts/upload.sh data/generated/trips-100k.csv             # POST /uploads, PUT
 - **Write once:** trips are upserted on the natural key `trip_id` (no-op updates are skipped), so reprocessing a chunk rewrites nothing.
 - **Complete once:** both the splitter and the last worker check `chunksDone == chunksTotal`; finalisation is idempotent and the `BatchCompleted` publish is guarded by a flag.
 - Verified by `PipelineIT`: 100k rows, 5% bad, 2% duplicates give exactly 93,000 good / 5,000 bad, and re-delivering every chunk message and the file event changes nothing.
+
+## Reliability
+Retries use exponential backoff and end in a DLQ after 5 receives; a heartbeat keeps slow chunks from being redelivered;
+`scripts/redrive.sh <queue>` moves DLQ messages back after you fix the cause. Every failure mode (kill -9 mid-chunk,
+duplicates, poison message, missing object, DB outage) is injected for real in `FailureModesIT` and ends in exact counts.
+See [docs/failure-modes.md](docs/failure-modes.md).
 
 ## Layout
 - `src/main/java/com/tripstream/roles` - per-profile role wiring

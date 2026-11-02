@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tripstream.jobs.JobRepository;
 import io.awspring.cloud.sqs.annotation.SqsListener;
+import io.awspring.cloud.sqs.listener.Visibility;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -36,7 +37,7 @@ class FileEventListener {
     }
 
     @SqsListener("${tripstream.queues.file-events}")
-    void onFileEvent(String body) throws Exception {
+    void onFileEvent(String body, Visibility visibility) throws Exception {
         JsonNode records = mapper.readTree(body).path("Records");
         if (!records.isArray() || records.isEmpty()) {
             log.info("Ignoring non-record S3 message (e.g. s3:TestEvent)");
@@ -45,11 +46,11 @@ class FileEventListener {
         for (JsonNode record : records) {
             String key = URLDecoder.decode(record.path("s3").path("object").path("key").asText(),
                     StandardCharsets.UTF_8);
-            handleKey(key);
+            handleKey(key, visibility);
         }
     }
 
-    private void handleKey(String key) throws Exception {
+    private void handleKey(String key, Visibility visibility) throws Exception {
         UUID jobId = parseJobId(key);
         if (jobId == null) {
             log.warn("Ignoring object with unexpected key {}", key);
@@ -62,7 +63,7 @@ class FileEventListener {
             return;
         }
         if (splitter.shouldSplit(jobId)) {
-            splitter.split(jobId, key);
+            splitter.split(jobId, key, visibility);
         } else {
             log.info("jobId={} duplicate file event, already split or finished", jobId);
         }
