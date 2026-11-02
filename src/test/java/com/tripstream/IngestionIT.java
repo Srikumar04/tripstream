@@ -130,13 +130,13 @@ class IngestionIT {
     }
 
     @Test
-    void splitterRoleMovesJobToReceivedAndDuplicateOrUnknownEventsAreHarmless() throws Exception {
+    void splitterRoleAdvancesJobAndDuplicateOrUnknownEventsAreHarmless() throws Exception {
         try (ConfigurableApplicationContext ctx = start("api", "splitter"); SqsClient sqs = sqs()) {
             String base = base(ctx);
             Upload u = createUpload(base);
             putFile(u);
             await().atMost(Duration.ofSeconds(30)).untilAsserted(
-                    () -> assertThat(status(base, u.jobId())).isEqualTo("RECEIVED"));
+                    () -> assertThat(status(base, u.jobId())).isEqualTo("PROCESSING"));
 
             // Redeliver the same event and send one for a job that does not exist.
             String queueUrl = sqs.getQueueUrl(b -> b.queueName("file-events")).queueUrl();
@@ -148,8 +148,8 @@ class IngestionIT {
             Upload next = createUpload(base);
             putFile(next);
             await().atMost(Duration.ofSeconds(30)).untilAsserted(
-                    () -> assertThat(status(base, next.jobId())).isEqualTo("RECEIVED"));
-            assertThat(status(base, u.jobId())).isEqualTo("RECEIVED");
+                    () -> assertThat(status(base, next.jobId())).isEqualTo("PROCESSING"));
+            assertThat(status(base, u.jobId())).isEqualTo("PROCESSING");
         }
     }
 

@@ -13,11 +13,11 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * Consumes S3 ObjectCreated events from file-events and moves the job to RECEIVED.
- * Phase 2 extends this to hand the file to the splitter.
+ * Consumes S3 ObjectCreated events from file-events: CREATED -> RECEIVED, then runs the splitter.
  *
- * Idempotent: duplicate events are no-ops. Events we can never process (unparseable, unknown job)
- * are logged and acknowledged rather than retried, so they cannot become poison messages.
+ * Idempotent: a duplicate event for a job already past RECEIVED is a no-op; a duplicate that arrives while the
+ * job is still RECEIVED (e.g. the first attempt crashed mid-split) re-runs the deterministic split.
+ * Events we can never process (unparseable, unknown job) are logged and acknowledged, not retried.
  */
 @Component
 @Profile("splitter")
@@ -26,10 +26,12 @@ class FileEventListener {
     private static final Logger log = LoggerFactory.getLogger(FileEventListener.class);
 
     private final JobRepository jobs;
+    private final Splitter splitter;
     private final ObjectMapper mapper;
 
-    FileEventListener(JobRepository jobs, ObjectMapper mapper) {
+    FileEventListener(JobRepository jobs, Splitter splitter, ObjectMapper mapper) {
         this.jobs = jobs;
+        this.splitter = splitter;
         this.mapper = mapper;
     }
 
@@ -47,7 +49,7 @@ class FileEventListener {
         }
     }
 
-    private void handleKey(String key) {
+    private void handleKey(String key) throws Exception {
         UUID jobId = parseJobId(key);
         if (jobId == null) {
             log.warn("Ignoring object with unexpected key {}", key);
@@ -55,10 +57,14 @@ class FileEventListener {
         }
         if (jobs.markReceived(jobId)) {
             log.info("jobId={} RECEIVED key={}", jobId, key);
-        } else if (jobs.exists(jobId)) {
-            log.info("jobId={} duplicate file event, already past CREATED", jobId);
-        } else {
+        } else if (!jobs.exists(jobId)) {
             log.warn("jobId={} file event for unknown job, ignoring", jobId);
+            return;
+        }
+        if (splitter.shouldSplit(jobId)) {
+            splitter.split(jobId, key);
+        } else {
+            log.info("jobId={} duplicate file event, already split or finished", jobId);
         }
     }
 

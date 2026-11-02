@@ -28,3 +28,9 @@ Section-5 tech choices are fixed by the project brief; deviations get an entry h
 - Context: Found in a live smoke test: starting `api` and `splitter` simultaneously against an empty database made one crash with a duplicate-key error while creating `databasechangeloglock`. Liquibase's lock protects migrations, but not the creation of the lock table itself.
 - Decision: `spring.liquibase.enabled=false` by default, `true` under the `api` profile. Start `api` first on a fresh database.
 - Consequences: Other roles that start before the schema exists fail their first queries and rely on SQS redelivery. In Phase 5 this becomes a one-shot migration task run before the services (ECS task / init container), at which point the api flag can be turned off too.
+
+## ADR-006: Chunk upserts run in trip_id order
+- Status: accepted
+- Context: Found by the 100k-row pipeline test. Duplicate trips can land in different chunks, so parallel workers upsert overlapping key sets. With each worker taking row locks in file order, Postgres reported `deadlock detected`, the chunks were retried only after the visibility timeout, and the job stalled.
+- Decision: sort each chunk's rows by `trip_id` before the batch upsert, so all transactions acquire row locks in the same global order.
+- Consequences: no lock cycles between chunks; deadlocks remain a retryable error (SQS redelivery) as a safety net.

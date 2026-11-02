@@ -26,6 +26,13 @@ spring:
         queue-not-found-strategy: FAIL
 
 tripstream:
+  splitter:
+    chunk-rows: 5000          # rows per chunk file / chunk-jobs message
+  worker:
+    concurrency: 4            # chunks processed in parallel per worker process
+    poll-size: 4              # SQS messages per poll; must be <= concurrency and <= 10
+    db-batch-size: 500        # rows per JDBC batch
+    lease: PT90S              # idempotency claim lease; must be shorter than the queue visibility timeout
   upload:
     url-expiry: PT15M
   buckets:
