@@ -1,0 +1,8 @@
+target/
+.idea/
+*.iml
+.DS_Store
+.env
+*.log
+# generated synthetic data
+data/generated/

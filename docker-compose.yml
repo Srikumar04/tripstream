@@ -1,0 +1,38 @@
+# Local infrastructure. No AWS account needed.
+# Host ports are overridable (e.g. POSTGRES_PORT=5433 docker compose up -d) if they clash.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tripstream
+      POSTGRES_USER: tripstream
+      POSTGRES_PASSWORD: tripstream
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tripstream -d tripstream"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  localstack:
+    # Pinned: newer LocalStack images require an auth token; 3.8 community edition does not.
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: s3,sqs,sns,dynamodb
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "${LOCALSTACK_PORT:-4566}:4566"
+    volumes:
+      - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      # ready.d scripts finish before this reports ready
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

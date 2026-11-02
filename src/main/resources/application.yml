@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: tripstream
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/tripstream}
+    username: ${DB_USER:tripstream}
+    password: ${DB_PASSWORD:tripstream}
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+  cloud:
+    aws:
+      # Local default: LocalStack. In AWS, unset AWS_ENDPOINT and use the default credential chain.
+      endpoint: ${AWS_ENDPOINT:http://localhost:4566}
+      region:
+        static: ${AWS_REGION:us-east-1}
+      credentials:
+        access-key: ${AWS_ACCESS_KEY_ID:test}
+        secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+      s3:
+        path-style-access-enabled: true
+
+tripstream:
+  buckets:
+    raw: ${TRIPSTREAM_RAW_BUCKET:tripstream-raw}
+    chunks: ${TRIPSTREAM_CHUNKS_BUCKET:tripstream-chunks}
+    errors: ${TRIPSTREAM_ERRORS_BUCKET:tripstream-errors}
+  queues:
+    file-events: file-events
+    chunk-jobs: chunk-jobs
+    aggregator: aggregator-queue
+    notifier: notifier-queue
+  topics:
+    trip-events: trip-events
+  tables:
+    idempotency: tripstream-idempotency
+    job-progress: tripstream-job-progress
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
