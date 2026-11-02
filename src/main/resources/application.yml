@@ -7,6 +7,7 @@ spring:
     password: ${DB_PASSWORD:tripstream}
     hikari:
       connection-timeout: 5000   # fail fast when the DB is unreachable; SQS retry/backoff takes over
+      maximum-pool-size: ${DB_POOL_SIZE:10}   # total connections = instances x this; keep under Postgres max_connections
       data-source-properties:
         socketTimeout: 30        # seconds; a hung DB must not block a worker (or its heartbeat) forever
         tcpKeepAlive: true
@@ -45,6 +46,7 @@ tripstream:
     concurrency: 4            # chunks processed in parallel per worker process
     poll-size: 4              # SQS messages per poll; must be <= concurrency and <= 10
     db-batch-size: 500        # rows per JDBC batch
+    commit-per-batch: false   # true = commit every batch (shorter row locks, see docs/benchmarks.md); false = one transaction per chunk
     lease: PT90S              # idempotency claim lease; must be shorter than the queue visibility timeout
   upload:
     url-expiry: PT15M

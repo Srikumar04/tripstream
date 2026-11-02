@@ -21,12 +21,12 @@ public class ChunkRepository {
 
     public void markStarted(UUID jobId, int chunkId) {
         jdbc.update("UPDATE job_chunks SET status = 'PROCESSING', attempts = attempts + 1, "
-                + "started_at = COALESCE(started_at, now()) WHERE job_id = ? AND chunk_id = ?", jobId, chunkId);
+                + "started_at = COALESCE(started_at, clock_timestamp()) WHERE job_id = ? AND chunk_id = ?", jobId, chunkId);
     }
 
     /** Called inside the same DB transaction as the trip upserts. */
     public void markDone(UUID jobId, int chunkId, int validRows, int badRows) {
-        jdbc.update("UPDATE job_chunks SET status = 'DONE', valid_rows = ?, bad_rows = ?, finished_at = now() "
+        jdbc.update("UPDATE job_chunks SET status = 'DONE', valid_rows = ?, bad_rows = ?, finished_at = clock_timestamp() "
                 + "WHERE job_id = ? AND chunk_id = ?", validRows, badRows, jobId, chunkId);
     }
 }

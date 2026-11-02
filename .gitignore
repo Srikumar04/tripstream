@@ -12,3 +12,4 @@ data/generated/
 *.tfstate
 *.tfstate.*
 crash.log
+data/

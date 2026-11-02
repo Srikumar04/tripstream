@@ -57,6 +57,7 @@ public class ChunkProcessor {
     private final Duration heartbeatInterval;
     private final int visibilitySeconds;
     private final Duration chaosDelay;
+    private final boolean commitPerBatch;
 
     public ChunkProcessor(ChunkLedger ledger, ChunkRepository chunks, TripWriter writer, JobCompletion completion,
             S3Client s3, TransactionTemplate tx,
@@ -65,7 +66,8 @@ public class ChunkProcessor {
             @Value("${tripstream.worker.lease:PT90S}") Duration lease,
             @Value("${tripstream.reliability.heartbeat-interval:PT30S}") Duration heartbeatInterval,
             @Value("${tripstream.reliability.visibility-timeout:PT2M}") Duration visibilityTimeout,
-            @Value("${tripstream.chaos.chunk-delay:PT0S}") Duration chaosDelay) {
+            @Value("${tripstream.chaos.chunk-delay:PT0S}") Duration chaosDelay,
+            @Value("${tripstream.worker.commit-per-batch:false}") boolean commitPerBatch) {
         this.ledger = ledger;
         this.chunks = chunks;
         this.writer = writer;
@@ -78,6 +80,7 @@ public class ChunkProcessor {
         this.heartbeatInterval = heartbeatInterval;
         this.visibilitySeconds = (int) visibilityTimeout.toSeconds();
         this.chaosDelay = chaosDelay;
+        this.commitPerBatch = commitPerBatch;
     }
 
     public void process(ChunkMessage msg, Visibility visibility) throws IOException {
@@ -160,10 +163,18 @@ public class ChunkProcessor {
 
         final int valid = validRows;
         final int bad = badRows;
-        tx.executeWithoutResult(status -> {
+        if (commitPerBatch) {
+            // Each JDBC batch commits on its own, so row locks are held for milliseconds instead of the whole chunk.
+            // Safe because the upsert is idempotent: a crash mid-chunk leaves some rows written, and the retry
+            // rewrites them as no-ops. The chunk is only marked done after every batch is in.
             writer.upsert(msg.jobId(), new ArrayList<>(good.values()));
             chunks.markDone(msg.jobId(), msg.chunkId(), valid, bad);
-        });
+        } else {
+            tx.executeWithoutResult(status -> {
+                writer.upsert(msg.jobId(), new ArrayList<>(good.values()));
+                chunks.markDone(msg.jobId(), msg.chunkId(), valid, bad);
+            });
+        }
 
         boolean counted = ledger.completeChunk(pk, msg.jobId());
         log.info("jobId={} chunkId={} done valid={} bad={} counted={}", msg.jobId(), msg.chunkId(), valid, bad, counted);

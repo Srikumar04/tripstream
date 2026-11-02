@@ -52,3 +52,12 @@ Section-5 tech choices are fixed by the project brief; deviations get an entry h
 - Left out on purpose: `aws_sqs_queue_redrive_allow_policy` ("only the main queue may use this DLQ"). It is optional hardening, and its destroy never finished against LocalStack, so I could not verify clean teardown. The queue's redrive policy (which is what sends messages to the DLQ) is unaffected.
 - Alarms: DLQ depth > 0 is the "a human must act" signal; oldest-message-age is the "consumers are down or slow" signal and fires earlier. Neither needs the application to emit metrics.
 - Not applied to real AWS yet. ECS/RDS are deferred (see infra/terraform/README.md).
+
+## ADR-010: Findings from load testing: pool sizing, timestamps, and an opt-in commit-per-batch mode
+- Status: accepted (commit-per-batch stays **off by default**)
+- Context: Phase 6 benchmarks (docs/benchmarks.md). Scaling stopped at about 4 workers because concurrent chunk transactions waited on each other's row locks (74% of active DB sessions on `Lock:transactionid` at 8 workers), not because of CPU.
+- Decisions:
+  1. `tripstream.worker.commit-per-batch` (default `false`). When `true`, each 500-row JDBC batch commits on its own, so locks are held for milliseconds. Measured +53% at 4 workers (67.9k to 103.7k rows/s). Safe because upserts are idempotent and the chunk is marked done only after its last batch; the cost is that a running chunk's rows can be partially visible in `trips`. Left off by default because the failure-mode suite (`FailureModesIT`) was written and run against the single-transaction behaviour; it was validated at 1M rows with kill -9 chaos instead (docs/benchmarks.md section 4).
+  2. `DB_POOL_SIZE` (default 10) makes the Hikari pool size configurable: instances x pool size must stay under the database's `max_connections` (the 8-worker benchmark hit `too many clients`). A worker needs about `concurrency + 2`.
+  3. Chunk timestamps use `clock_timestamp()`; `now()` inside the DB transaction returned the transaction start and hid the upsert time.
+- Not done: enabling `reWriteBatchedInserts` by default (+21% on its own) pending a look at its interaction with `ON CONFLICT` on other pgjdbc versions.

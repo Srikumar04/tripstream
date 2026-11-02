@@ -65,14 +65,14 @@ def main():
     n_bad = round(a.rows * a.bad_pct / 100)
     n_dup = round(a.rows * a.dup_pct / 100)
     n_good = a.rows - n_bad - n_dup
-    if n_good < 1 or min(n_bad, n_dup) < 0:
-        sys.exit("bad-pct + dup-pct must leave at least one good row")
+    if n_good < 0 or min(n_bad, n_dup) < 0 or (n_good == 0 and n_dup > 0):
+        sys.exit("bad-pct + dup-pct must leave good rows (all-bad poison files need --dup-pct 0)")
 
     rng = random.Random(a.seed)
     # Decide each row's kind without materialising the file: a shuffled kind list is 1 byte/row.
     kinds = bytearray([0] * n_good + [1] * n_bad + [2] * n_dup)  # 0 good, 1 bad, 2 dup
     rng.shuffle(kinds)
-    if kinds[0] != 0:  # a duplicate needs an earlier good row to copy
+    if n_dup and kinds[0] != 0:  # a duplicate needs an earlier good row to copy
         i = kinds.index(0)
         kinds[0], kinds[i] = kinds[i], kinds[0]
 

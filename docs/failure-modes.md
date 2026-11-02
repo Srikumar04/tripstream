@@ -50,7 +50,7 @@ worker's lease expires before its message reappears, so the redelivered message 
 ## Database temporarily unavailable (`databaseOutageIsRetriedWithBackoffAndLosesNothing`)
 - **Happens:** Postgres stops answering mid-run (the test pauses the container for 9s). Connections fail fast (5s pool timeout) or hang until the 30s socket timeout rather than blocking forever.
 - **Recovery:** affected chunks fail, release their claims, back off and retry; the heartbeat keeps working chunks' messages invisible while they are still alive. Once the DB returns they succeed.
-- **Why correct:** the chunk's DB work is one transaction, so a failure leaves nothing partial; the counter moves only after it commits.
+- **Why correct:** by default the chunk's DB work is one transaction, so a failure leaves nothing partial; the counter moves only after it commits. (With the opt-in `commit-per-batch` mode a failure can leave some of the chunk's rows written; the retry rewrites them as no-ops, which is why exactness still holds. See ADR-010.)
 - **Limit:** an outage longer than roughly 5 retries' worth of backoff (about 2 + 4 + 8 + 16 = 30s of delay plus the attempts) sends chunks to the DLQ. They are not lost: redrive them after the DB is back. Tune `retry-base-delay` / the queue's `maxReceiveCount` to match your outage tolerance.
 
 ## Concurrent chunks upserting the same trip (`PipelineIT`, ADR-006)

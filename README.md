@@ -4,7 +4,7 @@ Event-driven trip-processing pipeline on AWS (S3, SQS, SNS, DynamoDB) with Sprin
 A client uploads a large CSV of synthetic trips; the system validates it, processes it in parallel chunks, stores clean
 rows, reports bad rows, and fans out events. Every stage is idempotent and retry-safe.
 
-> Status: Phase 5 in progress: Terraform for buckets, queues, DLQs, topics, tables, IAM and alarms done and verified on LocalStack; ECS/RDS deployment not yet. See the build plan in the project brief.
+> Status: Phases 0-4 and 6 done; Phase 5 has the Terraform for storage/messaging/IAM/alarms (verified on LocalStack, not applied to real AWS), ECS/RDS skipped; Phase 7 (polish) next. See the build plan in the project brief.
 
 ## Run locally (no AWS account needed)
 
@@ -58,6 +58,17 @@ Retries use exponential backoff and end in a DLQ after 5 receives; a heartbeat k
 `scripts/redrive.sh <queue>` moves DLQ messages back after you fix the cause. Every failure mode (kill -9 mid-chunk,
 duplicates, poison message, missing object, DB outage) is injected for real in `FailureModesIT` and ends in exact counts.
 See [docs/failure-modes.md](docs/failure-modes.md).
+
+## Benchmarks (local, LocalStack, one laptop; see [docs/benchmarks.md](docs/benchmarks.md))
+| | |
+|---|---|
+| 5M-row file, 4 workers | 75 s, **66,692 rows/s**, exact counts |
+| 1 -> 4 workers (1M rows) | 33,205 -> 67,901 rows/s (2.05x); stops scaling at ~4 workers: row-lock contention, found with `pg_stat_activity` wait events |
+| After fixing the contention | **103,663 rows/s** at 4 workers (+53%); 115,216 rows/s at 8 with batched-insert rewrite |
+| 4x `kill -9` workers + 35% duplicated messages (1M rows) | zero loss, zero double counting |
+| Poison flood (300k bad rows + garbage files) | contained; concurrent legit job exact |
+
+These are not AWS numbers (emulated services, Postgres in Docker on the same machine); the doc explains what transfers.
 
 ## Infrastructure as code
 `infra/terraform` provisions the buckets, queues + DLQs, SNS fan-out, DynamoDB tables, least-privilege task roles and
