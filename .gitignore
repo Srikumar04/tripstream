@@ -6,3 +6,9 @@ target/
 *.log
 # generated synthetic data
 data/generated/
+
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log

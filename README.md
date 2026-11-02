@@ -4,7 +4,7 @@ Event-driven trip-processing pipeline on AWS (S3, SQS, SNS, DynamoDB) with Sprin
 A client uploads a large CSV of synthetic trips; the system validates it, processes it in parallel chunks, stores clean
 rows, reports bad rows, and fans out events. Every stage is idempotent and retry-safe.
 
-> Status: Phase 4 (SNS fan-out, aggregator, notifier) done. See the build plan in the project brief.
+> Status: Phase 5 in progress: Terraform for buckets, queues, DLQs, topics, tables, IAM and alarms done and verified on LocalStack; ECS/RDS deployment not yet. See the build plan in the project brief.
 
 ## Run locally (no AWS account needed)
 
@@ -58,6 +58,10 @@ Retries use exponential backoff and end in a DLQ after 5 receives; a heartbeat k
 `scripts/redrive.sh <queue>` moves DLQ messages back after you fix the cause. Every failure mode (kill -9 mid-chunk,
 duplicates, poison message, missing object, DB outage) is injected for real in `FailureModesIT` and ends in exact counts.
 See [docs/failure-modes.md](docs/failure-modes.md).
+
+## Infrastructure as code
+`infra/terraform` provisions the buckets, queues + DLQs, SNS fan-out, DynamoDB tables, least-privilege task roles and
+CloudWatch alarms (DLQ not empty, oldest message age). See [infra/terraform/README.md](infra/terraform/README.md).
 
 ## Layout
 - `src/main/java/com/tripstream/roles` - per-profile role wiring

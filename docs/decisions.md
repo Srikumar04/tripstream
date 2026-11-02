@@ -45,3 +45,10 @@ Section-5 tech choices are fixed by the project brief; deviations get an entry h
 - Status: accepted
 - Decision: `trip-events` fans out to `aggregator-queue` and `notifier-queue` (SQS subscriptions with RawMessageDelivery, so consumers read the event JSON directly). Each consumer has its own queue and DLQ, so one slow or failing consumer never blocks the other. The notifier depends on a `NotificationSender` interface with a console adapter (default) and an SNS adapter (which can reach email/SMS/chat).
 - Consequences: event ids are stable per job (`BatchCompleted:<jobId>`); consumers dedupe on them (aggregator via Postgres, notifier via the DynamoDB claim pattern). Notification delivery is at-least-once. On real AWS the SQS queue policies must allow `sns.amazonaws.com` (Terraform, Phase 5); LocalStack does not enforce it.
+
+## ADR-009: Terraform layout, least-privilege roles and what was left out
+- Status: accepted
+- Decision: one small module per concern (`buckets`, `queue` = queue + DLQ, `topic`, `tables`, `alarms`, `iam`) composed by a root that also wires the S3 notification. Resource names carry `<prefix>-<environment>`; bucket names add the account id for global uniqueness. Roles are per application role with resource-scoped statements (for example the splitter can read `raw/uploads/*` and write `chunks/chunks/*`, nothing else). The app takes topic ARNs from configuration (`TRIPSTREAM_TOPICS_TRIP_EVENTS_ARN`, `TRIPSTREAM_NOTIFIER_TOPIC_ARN`) so no role needs `sns:CreateTopic`.
+- Left out on purpose: `aws_sqs_queue_redrive_allow_policy` ("only the main queue may use this DLQ"). It is optional hardening, and its destroy never finished against LocalStack, so I could not verify clean teardown. The queue's redrive policy (which is what sends messages to the DLQ) is unaffected.
+- Alarms: DLQ depth > 0 is the "a human must act" signal; oldest-message-age is the "consumers are down or slow" signal and fires earlier. Neither needs the application to emit metrics.
+- Not applied to real AWS yet. ECS/RDS are deferred (see infra/terraform/README.md).

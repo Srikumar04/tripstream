@@ -18,10 +18,12 @@ public class BatchCompletedPublisher {
     private volatile String topicArn;
 
     public BatchCompletedPublisher(SnsClient sns, ObjectMapper mapper,
-            @Value("${tripstream.topics.trip-events}") String topicName) {
+            @Value("${tripstream.topics.trip-events}") String topicName,
+            @Value("${tripstream.topics.trip-events-arn:}") String configuredArn) {
         this.sns = sns;
         this.mapper = mapper;
         this.topicName = topicName;
+        this.topicArn = configuredArn.isBlank() ? null : configuredArn; // set in AWS: no CreateTopic permission needed
     }
 
     public void publish(JobView job) {

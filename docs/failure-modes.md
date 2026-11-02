@@ -66,11 +66,11 @@ worker's lease expires before its message reappears, so the redelivered message 
 ## Known gaps (called out, not hidden)
 - **Redrive endpoint has no authentication.** Keep it on a private network / behind IAM in AWS.
 - **Splitter crash mid-split** re-splits from the start on redelivery (deterministic, idempotent), but rewrites every chunk object; very large files pay that cost twice.
-- **A job whose DLQ'd chunk is never redriven stays `PROCESSING`.** The DLQ-depth alarm (Phase 5) is the signal; there is no automatic job timeout yet.
+- **A job whose DLQ'd chunk is never redriven stays `PROCESSING`.** The DLQ-depth alarm is the signal; there is no automatic job timeout yet.
 - **`good_rows` counts trips tagged with the job.** A later job re-uploading the same trip ids takes them over.
 
 ## Redrive procedure (DLQ to main queue)
-1. **Detect:** `chunk-jobs-dlq` (or `file-events-dlq`) depth > 0 (CloudWatch alarm in Phase 5; locally `awslocal sqs get-queue-attributes`).
+1. **Detect:** the `<env>-<queue>-dlq-not-empty` CloudWatch alarm (Terraform `alarms` module) fires when a DLQ has messages; locally use `awslocal sqs get-queue-attributes`.
 2. **Inspect:** receive a message from the DLQ and read the worker log lines containing the `jobId` / `chunkId`; the log shows the root cause of each failed attempt.
 3. **Fix the cause** (restore the object, fix the code and redeploy, bring the DB back). Redriving without fixing just returns the message to the DLQ after 5 more receives.
 4. **Redrive:**

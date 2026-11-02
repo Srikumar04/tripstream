@@ -20,9 +20,11 @@ class SnsNotificationSender implements NotificationSender {
     private volatile String topicArn;
 
     SnsNotificationSender(SnsClient sns,
-            @Value("${tripstream.notifier.topic:tripstream-notifications}") String topicName) {
+            @Value("${tripstream.notifier.topic:tripstream-notifications}") String topicName,
+            @Value("${tripstream.notifier.topic-arn:}") String configuredArn) {
         this.sns = sns;
         this.topicName = topicName;
+        this.topicArn = configuredArn.isBlank() ? null : configuredArn;
     }
 
     @Override
