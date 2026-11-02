@@ -12,8 +12,8 @@ import org.springframework.context.annotation.Profile;
 class AggregatorRoleConfig {
     private static final Logger log = LoggerFactory.getLogger(AggregatorRoleConfig.class);
 
-    @Bean
-    RoleMarker roleMarker() {
+    @Bean("aggregatorRoleMarker")
+    RoleMarker aggregatorRoleMarker() {
         log.info("Starting TripStream role: aggregator");
         return new RoleMarker("aggregator");
     }

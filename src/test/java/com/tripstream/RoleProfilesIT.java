@@ -11,7 +11,11 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.localstack.LocalStackContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.utility.MountableFile;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** Each role starts independently under its own profile and applies the Liquibase schema. */
@@ -21,6 +25,19 @@ class RoleProfilesIT {
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
+    @Container
+    static final LocalStackContainer LOCALSTACK = new LocalStackContainer(
+                    DockerImageName.parse("localstack/localstack:3.8.1"))
+            .withServices(
+                    LocalStackContainer.EnabledService.named("s3"),
+                    LocalStackContainer.EnabledService.named("sqs"),
+                    LocalStackContainer.EnabledService.named("sns"),
+                    LocalStackContainer.EnabledService.named("dynamodb"))
+            .withCopyFileToContainer(
+                    MountableFile.forHostPath("infra/localstack/init-aws.sh", 0755),
+                    "/etc/localstack/init/ready.d/init-aws.sh")
+            .waitingFor(Wait.forLogMessage(".*TripStream local infra ready.*", 1));
+
     private ConfigurableApplicationContext start(String profile) {
         return new SpringApplicationBuilder(TripStreamApplication.class)
                 .web(WebApplicationType.SERVLET)
@@ -29,7 +46,9 @@ class RoleProfilesIT {
                         "--server.port=0",
                         "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
                         "--spring.datasource.username=" + POSTGRES.getUsername(),
-                        "--spring.datasource.password=" + POSTGRES.getPassword());
+                        "--spring.datasource.password=" + POSTGRES.getPassword(),
+                        "--spring.cloud.aws.endpoint=" + LOCALSTACK.getEndpoint(),
+                        "--spring.cloud.aws.region.static=" + LOCALSTACK.getRegion());
     }
 
     @ParameterizedTest

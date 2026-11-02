@@ -12,8 +12,8 @@ import org.springframework.context.annotation.Profile;
 class NotifierRoleConfig {
     private static final Logger log = LoggerFactory.getLogger(NotifierRoleConfig.class);
 
-    @Bean
-    RoleMarker roleMarker() {
+    @Bean("notifierRoleMarker")
+    RoleMarker notifierRoleMarker() {
         log.info("Starting TripStream role: notifier");
         return new RoleMarker("notifier");
     }

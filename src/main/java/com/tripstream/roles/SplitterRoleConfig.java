@@ -12,8 +12,8 @@ import org.springframework.context.annotation.Profile;
 class SplitterRoleConfig {
     private static final Logger log = LoggerFactory.getLogger(SplitterRoleConfig.class);
 
-    @Bean
-    RoleMarker roleMarker() {
+    @Bean("splitterRoleMarker")
+    RoleMarker splitterRoleMarker() {
         log.info("Starting TripStream role: splitter");
         return new RoleMarker("splitter");
     }

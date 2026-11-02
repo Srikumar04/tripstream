@@ -7,6 +7,9 @@ spring:
     password: ${DB_PASSWORD:tripstream}
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+    # Only the api role migrates (see application-api.yml, ADR-005): concurrent first-boot
+    # migrations from several roles race on Liquibase's lock-table creation.
+    enabled: false
   cloud:
     aws:
       # Local default: LocalStack. In AWS, unset AWS_ENDPOINT and use the default credential chain.
@@ -18,8 +21,13 @@ spring:
         secret-key: ${AWS_SECRET_ACCESS_KEY:test}
       s3:
         path-style-access-enabled: true
+      sqs:
+        # Never auto-create queues: an auto-created queue would silently lack the DLQ redrive policy.
+        queue-not-found-strategy: FAIL
 
 tripstream:
+  upload:
+    url-expiry: PT15M
   buckets:
     raw: ${TRIPSTREAM_RAW_BUCKET:tripstream-raw}
     chunks: ${TRIPSTREAM_CHUNKS_BUCKET:tripstream-chunks}

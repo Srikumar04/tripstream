@@ -31,6 +31,10 @@ create_queue_with_dlq chunk-jobs
 create_queue_with_dlq aggregator-queue
 create_queue_with_dlq notifier-queue
 
+echo "[init] wiring S3 ObjectCreated (uploads/) -> file-events"
+awslocal s3api put-bucket-notification-configuration --bucket tripstream-raw \
+  --notification-configuration '{"QueueConfigurations":[{"QueueArn":"arn:aws:sqs:us-east-1:000000000000:file-events","Events":["s3:ObjectCreated:*"],"Filter":{"Key":{"FilterRules":[{"Name":"prefix","Value":"uploads/"}]}}}]}'
+
 echo "[init] creating SNS topic"
 awslocal sns create-topic --name trip-events >/dev/null
 

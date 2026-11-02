@@ -12,8 +12,8 @@ import org.springframework.context.annotation.Profile;
 class ApiRoleConfig {
     private static final Logger log = LoggerFactory.getLogger(ApiRoleConfig.class);
 
-    @Bean
-    RoleMarker roleMarker() {
+    @Bean("apiRoleMarker")
+    RoleMarker apiRoleMarker() {
         log.info("Starting TripStream role: api");
         return new RoleMarker("api");
     }
